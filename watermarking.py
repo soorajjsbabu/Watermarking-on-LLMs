@@ -400,7 +400,6 @@ def process_outputs(data, output_file, watermark_type=None, delta=2.0, num_resul
         except Exception as e:
             print(f"Error processing ID {row['id']}: {e}")
 
-
 # Main Workflow
 if __name__ == "__main__":
     # Load MS MARCO collection
