@@ -1,0 +1,23 @@
+results
+.codegpt
+gpu-script.sh
+miniforge-projects.sh
+.bash_profile
+
+# Dataset
+collection.tsv
+
+# Result files
+non_watermarked_results.csv
+hard_watermarked_results.csv
+soft_watermarked_results.csv
+hard_watermarked_with_centroid.csv
+soft_watermarked_with_centroid.csv
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Conda
+*.conda
