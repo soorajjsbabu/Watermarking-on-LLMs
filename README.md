@@ -236,6 +236,8 @@ Watermarking-on-LLMs/
 
 ## 👤 Author
 
-**Sooraj Srinivasa Babu** (Student ID: 1812510)
+**Sooraj Srinivasa Babu**
+
 Master of Applied Science in Artificial Intelligence, University of Otago, New Zealand
-[LinkedIn](https://linkedin.com/in/soorajsrinivasababu) · [GitHub](https://github.com/soorajjsbabu)
+
+[LinkedIn](https://linkedin.com/in/soorajsrinivasababu)
