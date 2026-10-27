@@ -1,6 +1,6 @@
 # 🔍 Assessing Text Integrity: Evaluating the Effect of Watermarking in LLMs
 
-A research project investigating whether LLM watermarking techniques degrade the semantic quality of generated text, using centroid-based embedding analysis across 15,000 generated samples.
+A research project designed to study whether LLM watermarking techniques degrade the semantic quality of generated text, using centroid-based embedding analysis across 15,000 generated samples. As implemented, it validates the comparison pipeline (same prompts across conditions, embeddings, centroid spread) but does not answer that question, because of the limitations listed under [Status and known limitations](#️-status-and-known-limitations).
 
 Conducted as **APPS597 Supervised Independent Study** during the Master of Applied Science in Artificial Intelligence at the University of Otago, New Zealand.
 
@@ -14,13 +14,14 @@ This section describes what the code in this repository actually does. Read the 
 
 - **The watermark does not change the generated text.** In `generate_text_with_watermark` (`watermarking.py`), the full response is first collected from Ollama. The code then creates a separate random vector (`np.random.rand(50000)`), applies the hard or soft green/red-list rule to that vector, takes its argmax, and appends `" [Token ID: <id>]"` to the text. The tokens the model produced are never modified.
 - **What the results therefore measure.** In all three conditions the text is generated the same way: five independent Ollama samples per prompt. The reported numbers describe the baseline sampling variation of this pipeline. They are not evidence about the effect of watermarking on text quality.
-- **Only watermarked outputs get the suffix.** Non-watermarked outputs have nothing appended. The token list generator reseeds NumPy's global RNG with 42 on every call, so the "random" vector is the same every time after the first call. As a result the suffix is effectively constant: `[Token ID: 24782]` in all 5,000 soft rows and in 4,999 of 5,000 hard rows (the first hard row has 26112). This suffix is the only systematic text difference between the conditions.
+- **Only watermarked outputs get the suffix.** Non-watermarked outputs have nothing appended. The token list generator reseeds NumPy's global RNG with 42 on every call, so the "random" vector is the same every time after the first call. As a result the suffix is effectively constant: `[Token ID: 24782]` in all 5,000 soft rows and in 4,999 of 5,000 hard rows (the first hard row has 26112). This suffix is the only difference the code introduces between the conditions' outputs.
 - **The green/red lists come from a fixed seed.** The vocabulary is shuffled once with `np.random.seed(42)` and split at γ = 0.5, giving the same partition every time. No secret key or previous token is hashed. `sha256` is imported but not used.
 - **The length limit is ignored.** The request sends `"max_length": 50` as a top-level field. Ollama reads the limit from `options.num_predict`, so no limit was applied. Median output length is about 157–161 words per condition, and the longest output is 4,853 words.
 - **There is no detector.** The repository has no z-score or other watermark detection step, so detectability was not measured.
 - **The prompt sample is unseeded.** `collection_data.sample(1000)` has no `random_state`. The same 1,000 prompts were used for all three conditions within the run, but the exact sample cannot be reproduced.
 - **Unused code.** `BATCH_SIZE` and `process_dataset` are defined in `watermarking.py` but not used by the main workflow.
-- **Scope.** The experiment was run within the available compute and time (about 72 hours of GPU time for 15,000 generations) with LLaMA 3.1 8B only.
+- **Scope.** The experiment was run within the available compute and time (about 72 hours of GPU time for 15,000 generations), which limited it to 1,000 prompts per condition. Only LLaMA 3.1 8B was used; larger models (70B, 405B) were not tested.
+- **No robustness testing.** Robustness against attacks such as paraphrasing or text manipulation was not evaluated.
 
 See [Corrected design (future work)](#-corrected-design-future-work) for how the experiment would need to change to test the research questions.
 
@@ -30,11 +31,13 @@ See [Corrected design (future work)](#-corrected-design-future-work) for how the
 
 The rapid adoption of large language models has raised concerns about misuse — AI-driven misinformation, academic dishonesty, and copyright violation. Watermarking offers a solution by embedding detectable signals into LLM outputs. But does watermarking change the meaning of the generated text?
 
-This project applies two watermarking schemes based on Kirchenbauer et al.'s work to the LLaMA 3.1 8B model, then measures their impact on text quality using semantic similarity and centroid distance analysis across the MS MARCO dataset.
+This project generates text with LLaMA 3.1 8B on MS MARCO passages and simulates hard and soft watermarking schemes (based on Kirchenbauer et al.) on a token-selection step after generation. It then compares the outputs using semantic similarity and centroid distance analysis. See [Status and known limitations](#️-status-and-known-limitations) for what this does and does not change.
 
 **Research questions:**
 1. Do watermarking techniques degrade the semantic quality of LLM outputs?
 2. How do hard and soft watermarking compare in practice?
+
+The current implementation does not answer these questions.
 
 ---
 
@@ -227,15 +230,6 @@ Watermarking-on-LLMs/
 | `semantic_similarity` | Cosine similarity between prompt and response |
 | `centroid` | Mean embedding vector across all responses for that prompt |
 | `distance_from_centroid` | Euclidean distance from the computed centroid |
-
----
-
-## ⚠️ Known Limitations
-
-- Experiment limited to 1,000 prompts per condition due to GPU constraints (72 hours runtime)
-- LLaMA 3.1 8B only — larger models (70B, 405B) not tested
-- Robustness against attacks (paraphrasing, text manipulation) not evaluated
-- Watermarking logic applied post-generation via logit modification rather than integrated into the model's decoding loop
 
 ---
 
