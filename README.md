@@ -8,6 +8,24 @@ Conducted as **APPS597 Supervised Independent Study** during the Master of Appli
 
 ---
 
+## ⚠️ Status and known limitations
+
+This section describes what the code in this repository actually does. Read the results below with it in mind.
+
+- **The watermark does not change the generated text.** In `generate_text_with_watermark` (`watermarking.py`), the full response is first collected from Ollama. The code then creates a separate random vector (`np.random.rand(50000)`), applies the hard or soft green/red-list rule to that vector, takes its argmax, and appends `" [Token ID: <id>]"` to the text. The tokens the model produced are never modified.
+- **What the results therefore measure.** In all three conditions the text is generated the same way: five independent Ollama samples per prompt. The reported numbers describe the baseline sampling variation of this pipeline. They are not evidence about the effect of watermarking on text quality.
+- **Only watermarked outputs get the suffix.** Non-watermarked outputs have nothing appended. The token list generator reseeds NumPy's global RNG with 42 on every call, so the "random" vector is the same every time after the first call. As a result the suffix is effectively constant: `[Token ID: 24782]` in all 5,000 soft rows and in 4,999 of 5,000 hard rows (the first hard row has 26112). This suffix is the only systematic text difference between the conditions.
+- **The green/red lists come from a fixed seed.** The vocabulary is shuffled once with `np.random.seed(42)` and split at γ = 0.5, giving the same partition every time. No secret key or previous token is hashed. `sha256` is imported but not used.
+- **The length limit is ignored.** The request sends `"max_length": 50` as a top-level field. Ollama reads the limit from `options.num_predict`, so no limit was applied. Median output length is about 157–161 words per condition, and the longest output is 4,853 words.
+- **There is no detector.** The repository has no z-score or other watermark detection step, so detectability was not measured.
+- **The prompt sample is unseeded.** `collection_data.sample(1000)` has no `random_state`. The same 1,000 prompts were used for all three conditions within the run, but the exact sample cannot be reproduced.
+- **Unused code.** `BATCH_SIZE` and `process_dataset` are defined in `watermarking.py` but not used by the main workflow.
+- **Scope.** The experiment was run within the available compute and time (about 72 hours of GPU time for 15,000 generations) with LLaMA 3.1 8B only.
+
+See [Corrected design (future work)](#-corrected-design-future-work) for how the experiment would need to change to test the research questions.
+
+---
+
 ## 📌 What This Project Does
 
 The rapid adoption of large language models has raised concerns about misuse — AI-driven misinformation, academic dishonesty, and copyright violation. Watermarking offers a solution by embedding detectable signals into LLM outputs. But does watermarking change the meaning of the generated text?
@@ -22,19 +40,21 @@ This project applies two watermarking schemes based on Kirchenbauer et al.'s wor
 
 ## 🔬 Watermarking Techniques
 
-Both techniques partition the vocabulary into "green" and "red" token lists using a cryptographic hash function and a secret key. Green list ratio (γ) is set to 0.5.
+Both techniques partition the vocabulary into "green" and "red" token lists. In Kirchenbauer et al., the green list is re-derived at each decoding step by hashing the previous token with a secret key. This implementation instead uses one fixed partition from `np.random.seed(42)`. Green list ratio (γ) is set to 0.5.
 
-**Hard Watermarking** — completely suppresses red-list tokens by setting their logits to negative infinity, guaranteeing certain tokens never appear in the output.
+**Hard Watermarking** — sets the logits of red-list tokens to negative infinity, so they cannot be selected.
 
-**Soft Watermarking** — raises the logits of green-list tokens by a delta value (δ = 2.0), biasing token selection without blocking any options entirely.
+**Soft Watermarking** — adds a delta value (δ = 2.0) to the logits of green-list tokens, biasing selection without blocking any token.
+
+In this code both rules are applied to a simulated logit vector after generation, not to the model's logits (see [Status and known limitations](#️-status-and-known-limitations)).
 
 ---
 
 ## 🧪 Experiment Design
 
 - **Dataset:** MS MARCO — 1,000 random passages sampled from 8 million
-- **Model:** LLaMA 3.1 8B via Ollama API (max 50 tokens per response)
-- **Samples:** 5 responses per prompt × 3 conditions × 1,000 prompts = **15,000 total samples**
+- **Model:** LLaMA 3.1 8B via Ollama API (a 50-token limit was intended but not applied; see limitations above)
+- **Samples:** 1,000 prompts × 5 responses × 3 conditions = **15,000 total samples** (5,000 rows per condition CSV)
 - **Embeddings:** `all-MiniLM-L6-v2` (SentenceTransformers)
 - **GPU:** CUDA acceleration via PyTorch
 - **Distance metric:** Euclidean distance from centroid
@@ -57,19 +77,19 @@ Three phases were run on the same 1,000 prompts: non-watermarked (baseline), har
 | Results below mean | 1,526 | 1,506 | 1,513 |
 | Results near mean | 1,955 | 1,928 | 1,920 |
 
-Mean distances are essentially identical across all three conditions (0.9835–0.9837), showing watermarking does not shift the overall semantic distribution of outputs. Soft watermarking shows the smallest standard deviation and maximum distance, indicating the most consistent output quality.
+The three conditions show near-identical distributions (mean 0.9835–0.9837), as expected given the limitation above: the model output is generated the same way in all three. The soft-watermarked condition has the smallest standard deviation and maximum distance, but the differences are small, were not tested for significance, and do not reflect a watermark effect.
 
 ### Figure 1 — Distribution of distances from each system's own centroid
 
 ![Distribution of distances from centroid](Analysis.png)
 
-All three systems maintain near-identical bell-shaped distributions peaking at 0.98–0.99, confirming that watermarking preserves the statistical properties of the original text generation process.
+All three conditions show near-identical bell-shaped distributions peaking at 0.98–0.99. This is consistent with all three being samples from the same, unmodified generation process.
 
 ### Figure 2 — Distribution of distances from the non-watermarked centroid
 
 ![Distribution of distances from non-watermarked centroid](Figure_1.png)
 
-When measuring all three systems against the same non-watermarked centroid, the distributions still overlap substantially — confirming that watermarked outputs cluster in the same region of embedding space as non-watermarked outputs.
+When all three conditions are measured against the same non-watermarked centroid, the distributions still overlap substantially, as expected given the limitation above.
 
 ### Inter-system centroid distances
 
@@ -79,14 +99,15 @@ When measuring all three systems against the same non-watermarked centroid, the 
 | Non-watermarked → Soft-watermarked | 0.0304 |
 | Hard-watermarked → Soft-watermarked | **0.0085** |
 
-Watermarked systems are statistically distinguishable from non-watermarked output (0.0304–0.0313), but the two watermarking approaches produce nearly identical distributions (0.0085 apart) — confirming both methods achieve similar efficacy, with soft watermarking marginally closer to the original.
+The two watermarked conditions are each about 0.03 from the non-watermarked centroid and 0.0085 from each other. Only the watermarked outputs carry the appended `[Token ID: 24782]` suffix, so this pattern is consistent with the suffix shifting the embeddings rather than with any watermark effect. No significance test was run.
 
 ### Key findings
 
-- Both techniques maintain text quality with minimal semantic degradation
-- Soft watermarking performs marginally better — smaller standard deviation (0.0145 vs 0.0151) and lower maximum distance (1.029 vs 1.0379)
-- Watermarks are statistically detectable yet do not meaningfully alter text meaning
-- Computational constraint: 72 hours on available GPU to process 15,000 samples
+- The three conditions show near-identical distance distributions (mean 0.9835–0.9837, standard deviation 0.0145–0.0151), as expected given that the watermark does not alter the generated text
+- The soft-watermarked condition has a slightly smaller standard deviation (0.0145 vs 0.0151) and maximum distance (1.0290 vs 1.0379) than the baseline; these differences are small, untested, and should not be read as one scheme performing better
+- The ~0.03 centroid shift of the watermarked conditions is consistent with the appended token ID suffix
+- No detector was implemented, so these results say nothing about watermark detectability, and they are not evidence about the effect of watermarking on text quality
+- The run took about 72 hours of GPU time for 15,000 generations
 
 ---
 
@@ -180,8 +201,8 @@ Watermarking-on-LLMs/
 │   ├── soft_watermarked_results.csv       # Soft watermarked outputs + embeddings
 │   ├── hard_watermarked_with_centroid.csv # Manually derived from hard results for report analysis
 │   └── soft_watermarked_with_centroid.csv # Manually derived from soft results for report analysis
-├── Figure_1.png                       # Distribution of distances from each system's centroid
-├── Analysis.png                       # Distribution of distances from non-watermarked centroid
+├── Analysis.png                       # Distribution of distances from each system's centroid (Figure 1)
+├── Figure_1.png                       # Distribution of distances from non-watermarked centroid (Figure 2)
 └── README.md
 ```
 
@@ -215,6 +236,20 @@ Watermarking-on-LLMs/
 - LLaMA 3.1 8B only — larger models (70B, 405B) not tested
 - Robustness against attacks (paraphrasing, text manipulation) not evaluated
 - Watermarking logic applied post-generation via logit modification rather than integrated into the model's decoding loop
+
+---
+
+## 🧭 Corrected design (future work)
+
+To test whether watermarking affects text quality, the experiment would need these changes:
+
+1. **Apply the watermark inside the decoding loop.** Generate with Hugging Face `transformers` and implement the watermark as a `LogitsProcessor`, so the model's logits are modified at every step before the next token is sampled. Ollama's generate API does not provide a way to modify logits during decoding.
+2. **Derive the green list per step.** Seed the green/red split at each step from a hash (e.g. SHA-256) of a secret key and the previous token ID, as in Kirchenbauer et al.
+3. **Add a z-score detector.** For a text of T scored tokens, recompute each step's green list with the key and count green tokens |s|_G. Then compute z = (|s|_G − γT) / √(Tγ(1 − γ)).
+4. **Include a positive control.** Watermarked text must score high (e.g. z > 4) and unwatermarked text near zero. If it does not, the watermark is not being applied and the quality results cannot be interpreted.
+5. **Make runs reproducible.** Set a real length limit (`max_new_tokens`), and seed both the prompt sample and generation.
+6. **Measure quality directly.** Compute the perplexity of each output under a larger reference model. Also compute the semantic similarity between each watermarked output and the unwatermarked output for the same prompt and seed.
+7. **Report paired differences.** Compare conditions per prompt and report the mean paired difference with confidence intervals (e.g. bootstrap 95% CIs).
 
 ---
 
